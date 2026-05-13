@@ -1,1 +1,164 @@
-chess
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sharper Chess Pro | Fixed Rules</title>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #00d4ff; --light-sq: #f1f5f9; --dark-sq: #64748b; }
+        body { font-family: sans-serif; background: var(--bg); color: white; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .timer-container { display: flex; justify-content: space-between; width: 100%; max-width: 480px; padding: 20px; font-family: monospace; font-size: 2rem; }
+        .board { display: grid; grid-template-columns: repeat(8, 1fr); width: 95vw; height: 95vw; max-width: 480px; max-height: 480px; border: 5px solid #334155; }
+        .square { display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
+        .light { background-color: var(--light-sq); }
+        .dark { background-color: var(--dark-sq); }
+        .selected { background-color: #fbbf24 !important; }
+        .valid-dot { width: 12px; height: 12px; background: rgba(0,0,0,0.2); border-radius: 50%; pointer-events: none; }
+        .piece { width: 90%; height: 90%; background-size: contain; background-repeat: no-repeat; background-position: center; }
+        .info-panel { width: 95vw; max-width: 480px; margin-top: 15px; background: var(--card); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); }
+        .btn-group { margin: 20px; display: flex; gap: 10px; }
+        .btn { padding: 12px 24px; border: none; border-radius: 6px; background: #334155; color: white; font-weight: bold; cursor: pointer; }
+        .btn-active { background: var(--accent); color: #0f172a; }
+    </style>
+</head>
+<body>
+
+    <div class="timer-container">
+        <div id="b-time" style="color: #ff4757;">10:00</div>
+        <div id="w-time" style="color: #00ff00;">10:00</div>
+    </div>
+
+    <div id="board" class="board"></div>
+
+    <div class="info-panel">
+        <div id="status-title" style="color: var(--accent); font-size: 0.8rem; font-weight: bold; margin-bottom: 5px;">SYSTEM READY</div>
+        <div id="log" style="font-size: 0.9rem; color: #cbd5e1;">Select a mode to begin.</div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn" id="f-btn" onclick="init('friends')">Friends</button>
+        <button class="btn" id="b-btn" onclick="init('bot')">AI Lessons</button>
+    </div>
+
+    <script>
+        const boardEl = document.getElementById('board');
+        const logEl = document.getElementById('log');
+        const titleEl = document.getElementById('status-title');
+        let board = [], turn = 'w', selected = null, mode = null, validMoves = [], timers = {w:600, b:600}, timerId = null;
+
+        const img = (p) => `https://upload.wikimedia.org/wikipedia/commons/${{
+            wP:'4/45/Chess_plt45.svg', wR:'7/72/Chess_rlt45.svg', wN:'7/70/Chess_nlt45.svg', wB:'b/b1/Chess_blt45.svg', wQ:'1/15/Chess_qlt45.svg', wK:'4/42/Chess_klt45.svg',
+            bP:'c/c7/Chess_pdt45.svg', bR:'f/ff/Chess_rdt45.svg', bN:'e/ef/Chess_ndt45.svg', bB:'9/98/Chess_bdt45.svg', bQ:'4/47/Chess_qdt45.svg', bK:'f/f0/Chess_kdt45.svg'
+        }[p]}`;
+
+        function init(m) {
+            mode = m;
+            document.getElementById('f-btn').className = m==='friends'?'btn btn-active':'btn';
+            document.getElementById('b-btn').className = m==='bot'?'btn btn-active':'btn';
+            titleEl.innerText = m==='friends'?'MATCH HISTORY':'AI COACH';
+            logEl.innerText = "Game started. White moves first.";
+            board = [
+                ['bR','bN','bB','bQ','bK','bB','bN','bR'],['bP','bP','bP','bP','bP','bP','bP','bP'],
+                [null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null],
+                [null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null],
+                ['wP','wP','wP','wP','wP','wP','wP','wP'],['wR','wN','wB','wQ','wK','wB','wN','wR']
+            ];
+            turn = 'w'; timers = {w:600, b:600};
+            if(timerId) clearInterval(timerId);
+            timerId = setInterval(updateTimer, 1000);
+            draw();
+        }
+
+        function updateTimer() {
+            timers[turn]--;
+            const f = (s) => `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+            document.getElementById('w-time').innerText = f(timers.w);
+            document.getElementById('b-time').innerText = f(timers.b);
+        }
+
+        function getMoves(r, c) {
+            const piece = board[r][c];
+            if (!piece) return [];
+            const color = piece[0], type = piece[1], moves = [];
+            const dir = color === 'w' ? -1 : 1;
+
+            if (type === 'P') {
+                if (!board[r+dir]?.[c]) {
+                    moves.push({r:r+dir, c:c});
+                    if (((color==='w'&&r===6)||(color==='b'&&r===1)) && !board[r+2*dir][c]) moves.push({r:r+2*dir, c:c});
+                }
+                [[dir,1],[dir,-1]].forEach(([dr,dc]) => {
+                    const tar = board[r+dr]?.[c+dc];
+                    if (tar && tar[0] !== color) moves.push({r:r+dr, c:c+dc});
+                });
+            } else {
+                const steps = {
+                    'N': [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]],
+                    'K': [[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]],
+                    'R': [[0,1],[0,-1],[1,0],[-1,0]], 'B': [[1,1],[1,-1],[-1,1],[-1,-1]],
+                    'Q': [[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]]
+                }[type];
+                steps.forEach(([dr, dc]) => {
+                    let nr = r+dr, nc = c+dc;
+                    while (nr>=0 && nr<8 && nc>=0 && nc<8) {
+                        const tar = board[nr][nc];
+                        if (!tar) { moves.push({r:nr, c:nc}); if ("NK".includes(type)) break; }
+                        else { if (tar[0] !== color) moves.push({r:nr, c:nc}); break; }
+                        nr += dr; nc += dc;
+                    }
+                });
+            }
+            return moves;
+        }
+
+        function draw() {
+            boardEl.innerHTML = '';
+            for(let r=0; r<8; r++) {
+                for(let c=0; c<8; c++) {
+                    const sq = document.createElement('div');
+                    sq.className = `square ${(r+c)%2===0?'light':'dark'}`;
+                    if (selected?.r===r && selected?.c===c) sq.classList.add('selected');
+                    if (validMoves.some(m => m.r===r && m.c===c)) sq.innerHTML = '<div class="valid-dot"></div>';
+                    if (board[r][c]) {
+                        const p = document.createElement('div');
+                        p.className = 'piece'; p.style.backgroundImage = `url(${img(board[r][c])})`;
+                        sq.appendChild(p);
+                    }
+                    sq.onclick = () => handle(r, c);
+                    boardEl.appendChild(sq);
+                }
+            }
+        }
+
+        function handle(r, c) {
+            if (!mode) return;
+            const piece = board[r][c];
+            if (selected && validMoves.some(m => m.r===r && m.c===c)) {
+                board[r][c] = board[selected.r][selected.c];
+                board[selected.r][selected.c] = null;
+                if (mode==='friends') logEl.innerText += ` | ${board[r][c][1]}${String.fromCharCode(97+c)}${8-r}`;
+                else logEl.innerText = piece ? "Coach: Great capture!" : "Coach: Nice positioning.";
+                turn = turn === 'w' ? 'b' : 'w';
+                selected = null; validMoves = [];
+                if (mode==='bot' && turn==='b') setTimeout(bot, 600);
+            } else if (piece && piece[0] === turn) {
+                selected = {r, c}; validMoves = getMoves(r, c);
+            } else {
+                selected = null; validMoves = [];
+            }
+            draw();
+        }
+
+        function bot() {
+            let all = [];
+            for(let r=0; r<8; r++) for(let c=0; c<8; c++)
+                if(board[r][c]?.startsWith('b')) getMoves(r,c).forEach(m => all.push({f:{r,c}, t:m}));
+            if(all.length) {
+                const m = all[Math.floor(Math.random()*all.length)];
+                board[m.t.r][m.t.c] = board[m.f.r][m.f.c]; board[m.f.r][m.f.c] = null;
+                turn = 'w'; draw();
+            }
+        }
+    </script>
+</body>
+</html>
